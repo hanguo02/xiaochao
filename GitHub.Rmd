@@ -1,0 +1,31 @@
+---
+title: "GitHub cheet sheet"
+output: html_document
+date: "2024-12-08"
+bibliography: references.bib
+csl: harvard-cite-them-right.csl
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## How to clone repository from Github to local directory 
+detail info can be found in this link <https://www.youtube.com/watch?v=NInwldFZgwA>.
+
+1. Copy the repository http from Github Code.
+
+2.Go to R studio and create a new project.
+
+3.Go to version control and paste the link above in the Repository URL.
+
+4.Create a RMarkdown File and then the R cell can be conducted. 
+
+
+
+
+
+
+
+
+

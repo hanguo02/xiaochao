@@ -1,0 +1,132 @@
+---
+title: "回归分析"
+output: html_document
+date: "2024-12-12"
+---
+
+#loading packages
+```{r}
+library(tidyverse)
+library(tmap)
+library(plotly)
+library(broom)
+library(mapview)
+library(sf)
+library(sp)
+library(spdep)
+library(car)
+library(fs)
+library(janitor)
+```
+
+
+
+##把需要做回归的数据转化成sf，包含坐标点，转化同一个crs
+```{r}
+lon_schools_sf <- st_as_sf(london_schools, #london_schools contains x, y point data
+                           coords = c("x","y"), 
+                           crs = 4326)
+
+lond_sec_schools_sf <- lon_schools_sf %>%
+  filter(PHASE=="Secondary") #选出需要的行数据
+```
+
+
+##linear regression mode in scatter plot 简单的线性回归
+```{r}
+q <- qplot(x = `Unauthorised Absence in All Schools (%) - 2013`, 
+           y = `Average GCSE capped point scores - 2014`, 
+           data=LonWardProfiles)
+q + stat_smooth(method="lm", se=FALSE, size=1) + 
+  geom_jitter()
+```
+
+
+
+##回归模型
+```{r}
+Regressiondata<- LonWardProfiles%>%
+  clean_names()%>%
+  dplyr::select(average_gcse_capped_point_scores_2014, 
+                unauthorised_absence_in_all_schools_percent_2013) #选出需要的两个回归的值
+
+#now model
+model1 <- Regressiondata %>%
+  lm(average_gcse_capped_point_scores_2014 ~
+       unauthorised_absence_in_all_schools_percent_2013,
+     data=.)
+
+#查看模型的重要数据：intercept，斜率，p值，
+library(broom)
+tidy(model1)
+glance(model1)
+
+#查看每一个点在model上的predicted值
+```
+
+
+
+##另一种回归拟合方式
+```{r}
+lm_mod <- linear_reg()
+
+# fit the model
+lm_fit <- 
+  lm_mod %>% 
+  fit(average_gcse_capped_point_scores_2014 ~
+        unauthorised_absence_in_all_schools_percent_2013,
+      data=Regressiondata) #这个是数据
+
+# we cover tidy and glance in a minute...
+tidy(lm_fit)
+
+```
+
+
+
+##直方图和曲线(distribution of frequency of variales) 查看数据的分布
+```{r}
+ggplot(LonWardProfiles, aes(x=`Average GCSE capped point scores - 2014`)) + 
+  geom_histogram(aes(y = ..density..),
+                 binwidth = 5) + 
+  geom_density(colour="red", 
+               size=1, 
+               adjust=1)
+```
+
+## TUKEY'S LADDER OF TRANSFORMATION:取对数把变量变成类似正态分布
+```{r}
+ggplot(LonWardProfiles, aes(x=log(median_house_price_2014))) + 
+  geom_histogram()
+
+```
+
+
+##symbox图 幂次对换调整数据分布减少偏态性和离散点的影响。
+```{r}
+symbox(~median_house_price_2014, 
+       LonWardProfiles, 
+       na.rm=T,
+       powers=seq(-3,3,by=.5))
+
+#选出需要的power看直方图分布
+ggplot(LonWardProfiles, aes(x=(median_house_price_2014)^-1)) + 
+  geom_histogram()
+#看scatterplot分布
+qplot(x = (median_house_price_2014)^-1, 
+      y = average_gcse_capped_point_scores_2014,
+      data=LonWardProfiles)
+#看log之后的scatter分布
+qplot(x = log(median_house_price_2014), 
+      y = average_gcse_capped_point_scores_2014, 
+      data=LonWardProfiles)
+
+```
+
+
+
+
+
+
+
+

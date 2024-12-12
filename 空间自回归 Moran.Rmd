@@ -1,0 +1,134 @@
+---
+title: "Moran'I for autocorrelation"
+output: html_document
+date: "2024-12-11"
+---
+
+# 1.0密度图
+## 先清理数据：把points和polygon相融合
+```{r}
+##数出每个polygon里有多少个point然后融合两个数据
+library(sf)
+points_sf_joined <- LondonWardsMerged%>% #地图或者polygon数据
+  mutate(n = lengths(st_intersects(., BluePlaquesSub)))%>% #点数据
+  janitor::clean_names()%>%
+  #calculate area
+  mutate(area=st_area(.))%>% #计算每个polygon的面积
+  #then density of the points per ward
+  mutate(density=n/area)%>% #计算每个polygon的密度
+  #select density and some other variables 
+  dplyr::select(density, ward_name, gss_code, n, average_gcse_capped_point_scores_2014) #挑选出需要的column（LondonWardsMerged)
+```
+
+## 画出密度图
+```{r}
+#st_intersect 会出现重复的数值，可以抽取group组里的第一个
+points_sf_joined<- points_sf_joined %>%                    
+  group_by(gss_code) %>%         
+  summarise(density = first(density),
+            wardname= first(ward_name),
+            plaquecount= first(n))
+#画出密度图
+tm_shape(points_sf_joined) +
+  tm_polygons("density",
+              style="jenks",
+              palette="PuOr",
+              midpoint=NA,
+              popup.vars=c("wardname", "density"),
+              title="Blue Plaque Density")
+```
+
+##计算Moran’I
+```{r}
+#设定好每个polygon的中心点
+coordsW <- points_sf_joined%>%
+  st_centroid()%>%
+  st_geometry()
+# 用contiguity boundaries来确定他的neighbourhood（binary matrix）
+LWard_nb <- points_sf_joined %>%
+  poly2nb(., queen=T)
+# 画出neighbor图
+plot(LWard_nb, st_geometry(coordsW), col="red")
+plot(points_sf_joined$geometry, add=T)
+# List of Weights in global standardization
+Lward.lw <- LWard_nb %>%
+  nb2listw(., style="C")
+#Moran’s I test 越接近于1是cluster，越接近-1是disperse，接近于0就是没有spatial autocorrelation
+I_LWard_Global_Density <- points_sf_joined %>%
+  pull(density) %>%
+  as.vector()%>%
+  moran.test(., Lward.lw)
+```
+
+## 计算Geary'C 
+```{r}
+#Geary's C [0˜2], 
+#越靠近0: strong positive autocorrelation
+#越靠近1: No spatial autoco
+#越靠近2: strong negative spatial autoco
+C_LWard_Global_Density <- 
+  points_sf_joined %>%
+  pull(density) %>%
+  as.vector()%>%
+  geary.test(., Lward.lw)
+```
+
+##计算Getis Ord：whether high or value are clustering 
+```{r}
+#
+G_LWard_Global_Density <- 
+  points_sf_joined %>%
+  pull(density) %>%
+  as.vector()%>%
+  globalG.test(., Lward.lw)
+#如果Global G > Expectation 
+#significant spatial clustering of high values across the study area.
+```
+
+## 计算Local Moran'I看每一个地区的值
+```{r}
+I_LWard_Local_count <- points_sf_joined %>%
+  pull(plaquecount) %>%
+  as.vector()%>%
+  localmoran(., Lward.lw)%>%
+  as_tibble()
+
+I_LWard_Local_Density <- points_sf_joined %>%
+  pull(density) %>%
+  as.vector()%>%
+  localmoran(., Lward.lw)%>%
+  as_tibble()
+#把每一个值添加到原来的sf数据表里
+points_sf_joined <- points_sf_joined %>%
+  mutate(plaque_count_I = as.numeric(I_LWard_Local_count$Ii))%>%
+  mutate(plaque_count_Iz =as.numeric(I_LWard_Local_count$Z.Ii))%>%
+  mutate(density_I =as.numeric(I_LWard_Local_Density$Ii))%>%
+  mutate(density_Iz =as.numeric(I_LWard_Local_Density$Z.Ii))
+```
+
+## 画图
+```{r}
+breaks1<-c(-1000,-2.58,-1.96,-1.65,1.65,1.96,2.58,1000)
+library(RColorBrewer)
+MoranColours<- rev(brewer.pal(8, "RdGy"))
+tm_shape(points_sf_joined) +
+    tm_polygons("plaque_count_Iz",
+        style="fixed",
+        breaks=breaks1,
+        palette=MoranColours,
+        midpoint=NA,
+        title="Local Moran's I, Blue Plaques in London")
+
+# Conclusion: This map shows some areas in the centre of London that have relatively high scores, indicating areas with lots of blue plaques neighbouring other areas with lots of blue plaques.
+```
+
+
+
+
+
+
+
+
+
+
+

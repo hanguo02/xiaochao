@@ -1,0 +1,101 @@
+---
+title: "画图"
+output: html_document
+date: "2024-12-10"
+---
+
+### KDE密度图
+```{r}
+
+# 确保所有的数据都用同一个 projected CRS!!!! 基于本地，开创一个观察窗口(window)
+Eviction_data <- st_transform(Eviction_data, crs = 2263)
+NewYork_shape <-st_transform(NewYork_Districts, crs = 2263)
+window <- as.owin(NewYork_shape)
+
+# Subset filtering: 选出想要观察的数据Sub
+# Filter data for residential points
+residentialsub <- Eviction_data[Eviction_data$residential_commercial == "Residential", ]
+residentialsub <- st_transform(residentialsub, crs = 2263)
+#把他转化成spatial object才可以进行观察
+residentialsub <- as(residentialsub, 'Spatial')
+#去除sp object里重复的数据点(coords)
+residentialsub <- residentialsub[!duplicated(residentialsub@coords), ]
+#create a ppp object
+residential.ppp <- ppp(x=residentialsub@coords[,1],
+                          y=residentialsub@coords[,2],
+                          window=window)
+#画出kde密度图
+residential.ppp %>%
+  density(., sigma=3000) %>%
+  plot()
+
+```
+
+### 画图：Ripley's K test
+```{r}
+K <- residential.ppp %>%
+  Kest(., correction="border") %>%
+  plot()
+
+#黑线位于红线上方：则表示cluster
+#黑线位于红线下方：则表示dispersion
+#x轴：分析聚类或分散的距离（或半径）
+#y轴：距离内的点的累计数量r每个点的密度由点模式的密度来规范化
+```
+
+
+#DBSCAN
+##1:先把spatial data frame里extract points
+```{r}
+library(fpc)
+#检查地图的CRS:
+st_geometry(NewYork_shape) #
+
+#first extract the points from the spatial points data frame
+residentialsubPoints <- residentialsub %>%
+  coordinates(.)%>%
+  as.data.frame()
+```
+##2:确定k值最近距离，画出dbscan
+```{r}
+residentialsubPoints%>%
+  dbscan::kNNdistplot(.,k=50)
+
+#now run the dbscan analysis
+db <- residentialsubPoints %>%
+  fpc::dbscan(.,eps = 1000, MinPts = 50)
+
+#now plot the results
+plot(db, residentialsubPoints, main = "DBSCAN Output", frame = F)
+plot(NewYork_shape$geometry, add=T)
+```
+
+##用ggplot2确定具体位置叠加底图
+```{r}
+library(ggplot2)
+#把cluster的点加到原来
+residentialsubPoints<- residentialsubPoints %>%
+  mutate(dbcluster=db$cluster)
+
+#把原来的sp重新转化成sf
+resitosf <- residentialsubPoints%>%
+  st_as_sf(.,coords = c("coords.x1","coords.x2"),
+                  crs = 6538)%>%
+  filter(dbcluster>0)
+
+ggplot(data = NewYork_shape) +
+  #adding the geometry of the community areas
+  geom_sf()+
+  #adding the geometry of the points -I have had to set the data here to add the layer
+  geom_sf(data = resitosf, size = 0.4, colour = resitosf$dbcluster,
+          fill = resitosf$dbcluster)
+```
+
+
+
+
+
+
+
+
+

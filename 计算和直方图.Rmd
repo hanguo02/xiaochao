@@ -1,0 +1,21 @@
+---
+title: "数据计算"
+output: html_document
+date: "2024-12-12"
+---
+
+## 如果column中有ab两个数据 要计算他们各自的总数和百分比
+```{r}
+# Column="Residential_Commercial" 
+#计算residential的百分比和commercial的百分比 (tidyverse)
+library(dplyr)
+percentages <- eviction2020 %>%
+  group_by(residential_commercial) %>%
+  summarise(
+    Count = n(),
+    Percentage = (n() / nrow(eviction2020)) * 100
+  ) %>%
+  rename(Category = residential_commercial)
+
+```
+

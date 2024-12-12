@@ -1,0 +1,136 @@
+---
+title: "读取数据和清理数据"
+output: html_document
+date: "2024-12-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# 读取数据
+```{r}
+# upload all packages 
+
+library(here)
+library(sp)
+library(mapview)
+library(tmap)
+library(sf)
+library(geojson)
+library(janitor)
+library(stringr)
+library(tidyverse)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(spatstat)
+
+```
+
+## 读取csv. & shp. 数据
+```{r}
+# read csv. file
+Eviction_list <- read.csv(here::here("data", "Evictions_20241208.csv")) %>%
+  replace(., . == "", NA) %>%
+  clean_names() %>%
+  filter(!is.na(latitude), !is.na(longitude)) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+
+# read shp.file
+NewYork_Districts <- st_read(here::here("data",
+                                    "Community Districts", 
+                                    "geo_export_ead37e4d-f87a-4077-b8bc-cf179111ae07.shp"
+                                    ))%>%
+  st_transform(., 4326)
+
+#这里注意所有数据要用相同的CRS
+```
+
+## filter出某一个row或者column
+```{r}
+#filter out rows in specific column start with any string
+library(stringr)
+#选出某一个年份(2020)
+eviction2020<-Eviction_list%>%
+  clean_names()%>%
+  filter(str_detect(executed_date,"2020"))
+
+  filter(eviction_legal_possession=="eviction")%>%
+    
+#去除重复的数据点
+    eviction2020 <- distinct(eviction2020)
+
+#filter out rows from year to year
+Eviction_list$Executed.Date <- as.Date(Eviction_list$Executed.Date, format = "%m/%d/%Y")
+Eviction_data <- Eviction_list %>%
+  filter(as.numeric(format(Executed.Date, "%Y")) >= 2020 & as.numeric(format(Executed.Date, "%Y")) <= 2024)
+
+```
+
+
+## 从表格中去除某一个column
+```{r}
+data <- subset(data, select = -c(Column1, Column2))
+```
+
+
+## 增加一个column计算和命名
+```{r}
+Eviction_list <- Eviction_list %>%
+  mutate(Executed.Date = as.Date(Executed.Date, format = "%m/%d/%Y"))
+# Executed.Date 是命名的新column
+Eviction_list <- Eviction_list %>%
+  mutate(Year = format(Executed.Date, "%Y"))
+```
+
+
+
+## 融合两个dataset
+```{r}
+#融合LondonWardsMerged 和 WardData
+LondonWardsMerged <- LondonWardsMerged %>% 
+  left_join(WardData, 
+            by = c("GSS_CODE" = "new_code"))%>% #有相同数据的column进行融合
+  dplyr::distinct(GSS_CODE, .keep_all = T)%>% #remove duplicates of GSS_CODE 剩下的其他数据保留
+  dplyr::select(GSS_CODE, ward_name, average_gcse_capped_point_scores_2014) #Selects specific columns to include in the final dataset
+```
+
+## Spatial subsetting:It extracts only those rows (points) in **A** that are spatially located within or intersect with the geometries in **B**.
+```{r}
+BluePlaquesSub <- BluePlaques[LondonWardsMerged, ]
+# A= BluePlaques
+# B= LondonWardsMerged
+```
+
+## Spatial intersection: 把points和polygon的结合在一起,适当时选出需要的column
+```{r}
+library(sf)
+points_sf_joined <- LondonWardsMerged%>%
+  mutate(n = lengths(st_intersects(., BluePlaquesSub)))%>% #n是新的column，储存intersect后每个polygon里的点数
+  janitor::clean_names()%>%
+  #calculate area：计算面积
+  mutate(area=st_area(.))%>%
+  #then density of the points per ward：每个ward里的点数密度
+  mutate(density=n/area)%>%
+  #select density and some other variables 选择出所需要的column
+  dplyr::select(density, ward_name, gss_code, n, average_gcse_capped_point_scores_2014)
+```
+
+
+## 基础画图
+```{r}
+library(tmap)
+tmap_mode("plot")
+tm_shape(LondonWardsMerged) +  #POLYGON data
+  tm_polygons(col = NA, alpha = 0.5) +
+  tm_shape(BluePlaques) + #POINT data
+  tm_dots(col = "red",size=0.1,style="cat")
+
+# 要确保polygon data 和 point data共用同一个crs
+```
+
+
+
